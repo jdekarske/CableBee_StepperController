@@ -1,0 +1,21 @@
+{
+    // Commands from here: https://github.com/micro-ROS/micro_ros_espidf_component
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "docker run -it --rm --user espidf --volume=/etc/timezone:/etc/timezone:ro -v  ${workspaceFolder}:/micro_ros_espidf_component -v  /dev:/dev --privileged --workdir /micro_ros_espidf_component microros/esp-idf-microros:latest /bin/bash  -c \"cd src; idf.py build flash monitor\""
+        },
+        {
+            "label": "build-menu",
+            "type": "shell",
+            "command": "docker run -it --rm --user espidf --volume=/etc/timezone:/etc/timezone:ro -v  ${workspaceFolder}:/micro_ros_espidf_component -v  /dev:/dev --privileged --workdir /micro_ros_espidf_component microros/esp-idf-microros:latest /bin/bash  -c \"cd src; idf.py menuconfig build flash monitor\""
+        },
+        {
+            "label": "run-agent",
+            "type": "shell",
+            "command": "docker run -it --rm --net=host microros/micro-ros-agent:foxy udp4 --port 8888 -v6"
+        }
+    ]
+}
