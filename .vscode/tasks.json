@@ -5,7 +5,10 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "docker run -it --rm --user espidf --volume=/etc/timezone:/etc/timezone:ro -v  ${workspaceFolder}:/micro_ros_espidf_component -v  /dev:/dev --privileged --workdir /micro_ros_espidf_component microros/esp-idf-microros:latest /bin/bash  -c \"cd src; idf.py build flash monitor\""
+            "command": "docker run -it --rm --user espidf --volume=/etc/timezone:/etc/timezone:ro -v  ${workspaceFolder}:/micro_ros_espidf_component -v  /dev:/dev --privileged --workdir /micro_ros_espidf_component microros/esp-idf-microros:latest /bin/bash  -c \"cd src; idf.py build flash monitor\"",
+            "problemMatcher": [
+                "$gcc"
+            ]
         },
         {
             "label": "build-menu",

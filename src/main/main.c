@@ -4,100 +4,69 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
 
-#include <uros_network_interfaces.h>
-#include <rcl/rcl.h>
-#include <rcl/error_handling.h>
-#include <std_msgs/msg/int32.h>
-#include <rclc/rclc.h>
-#include <rclc/executor.h>
-#include <rmw_uros/options.h>
-#include "uxr/client/config.h"
+#include "constants.h"
 
-#define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Aborting.\n",__LINE__,(int)temp_rc);vTaskDelete(NULL);}}
-#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Continuing.\n",__LINE__,(int)temp_rc);}}
-
-rcl_publisher_t publisher;
-std_msgs__msg__Int32 msg;
-
-void timer_callback(rcl_timer_t * timer, int64_t last_call_time)
+inline void stepDelay(void)
 {
-	RCLC_UNUSED(last_call_time);
-	if (timer != NULL) {
-		RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
-		msg.data++;
+	uint32_t m = esp_timer_get_time();
+	uint32_t e = (m + 1); // 1 uS delay
+	if (m > e)
+	{ //overflow
+		while (esp_timer_get_time() > e)
+		{
+			__asm__ __volatile__("nop");
+		}
+	}
+	while (esp_timer_get_time() < e)
+	{
+		__asm__ __volatile__("nop");
 	}
 }
 
-void micro_ros_task(void * arg)
+inline void step(int pin)
 {
-	rcl_allocator_t allocator = rcl_get_default_allocator();
-	rclc_support_t support;
-
-	rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
-	RCCHECK(rcl_init_options_init(&init_options, allocator));
-	rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
-
-	// Static Agent IP and port can be used instead of autodisvery.
-	RCCHECK(rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
-	//RCCHECK(rmw_uros_discover_agent(rmw_options));
-
-	// create init_options
-	RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
-
-	// create node
-	rcl_node_t node;
-	RCCHECK(rclc_node_init_default(&node, "esp32_int32_publisher", "", &support));
-
-	// create publisher
-	RCCHECK(rclc_publisher_init_default(
-		&publisher,
-		&node,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-		"freertos_int32_publisher"));
-
-	// create timer,
-	rcl_timer_t timer;
-	const unsigned int timer_timeout = 1000;
-	RCCHECK(rclc_timer_init_default(
-		&timer,
-		&support,
-		RCL_MS_TO_NS(timer_timeout),
-		timer_callback));
-
-	// create executor
-	rclc_executor_t executor;
-	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
-	RCCHECK(rclc_executor_add_timer(&executor, &timer));
-
-	msg.data = 0;
-
-	while(1){
-		rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
-		usleep(10000);
-	}
-
-	// free resources
-	RCCHECK(rcl_publisher_fini(&publisher, &node));
-	RCCHECK(rcl_node_fini(&node));
-
-  	vTaskDelete(NULL);
+	gpio_set_level(pin, 1);
+	stepDelay();
+	gpio_set_level(pin, 0);
 }
 
 void app_main(void)
-{   
-#ifdef UCLIENT_PROFILE_UDP
-    // Start the networking if required
-    ESP_ERROR_CHECK(uros_network_interface_initialize());
-#endif  // UCLIENT_PROFILE_UDP
+{
+	gpio_config_t io_conf;
+	//disable interrupt
+	io_conf.intr_type = GPIO_INTR_DISABLE;
+	//set as output mode
+	io_conf.mode = GPIO_MODE_OUTPUT;
+	//bit mask of the pins that you want to set,e.g.GPIO18/19
+	io_conf.pin_bit_mask = STEP_OUTPUTS;
+	//disable pull-down mode
+	io_conf.pull_down_en = 0;
+	//disable pull-up mode
+	io_conf.pull_up_en = 0;
+	//configure GPIO with the given settings
+	gpio_config(&io_conf);
 
-    //pin micro-ros task in APP_CPU to make PRO_CPU to deal with wifi:
-    xTaskCreate(micro_ros_task, 
-            "uros_task", 
-            CONFIG_MICRO_ROS_APP_STACK, 
-            NULL,
-            CONFIG_MICRO_ROS_APP_TASK_PRIO, 
-            NULL); 
+	int dir = 0;
+	int cnt = 0;
+
+	gpio_set_level(XDIR, dir);
+	gpio_set_level(XSTEP, 0);
+	while (1)
+	{
+		printf("cnt: %d\n", cnt++);
+		vTaskDelay(4 / portTICK_RATE_MS);
+		step(XSTEP);
+		if (cnt >= 4000)
+		{
+			cnt = 0;
+			//flip direction
+			dir = !dir;
+			gpio_set_level(XDIR, dir);
+		}
+	}
 }
